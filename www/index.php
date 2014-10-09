@@ -1,4 +1,4 @@
 <?php
     session_start();
-    header('Location: dashboard/');
+    header('Location: index/');
 ?>
