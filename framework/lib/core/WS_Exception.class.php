@@ -5,10 +5,9 @@
  *
  * Exception Prefix codes               <br/>
  * <b>10</b> Core                       <br/>
- * <b>11</b> LDAP                       <br/>
- * <b>12</b> MongoDB                    <br/>
- * <b>13</b> Mysql                      <br/>
- * 
+ * <b>11</b> MongoDB                    <br/>
+ * <b>12</b> Mysql                      <br/>
+ *
  * @author Nuno Barreto <nbarreto@gmail.com>
  */
 class WS_Exception extends Exception {
