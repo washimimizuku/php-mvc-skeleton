@@ -1,207 +1,400 @@
 <?php
-
-require_once(getenv('app_root').'/lib/utils/DebugLog.class.php');
-require_once(getenv('app_root').'/lib/utils/UtilsArray.class.php');
+/**
+ * Utils.class.php
+ *
+ * Path: /lib/utils/Utils.class.php
+ *
+ * @author Nuno Barreto <n.barreto@ydigitalmedia.com>
+ * @package utils
+ */
 
 /**
- * Various utility functions that don't belong to a specific class
+ * Utils class
  *
- * @author Patrick Monnerat <pm@datasphere.ch>
- * @author Nuno Barreto <nb@datasphere.ch>
- * @author Julien Hoarau <jh@datasphere.ch>
+ * @author Nuno Barreto <n.barreto@ydigitalmedia.com>
  */
 class Utils {
-    public static $aConvertField        = array(
-        'company' => 'Company',
-        'companyCode' => 'Company code',
-        'code' => 'Company code',
-        'operationType' => 'Type',
-        'bic' => 'BIC',
-        'iban' => 'IBAN',
-        'bban' => 'BBAN',
-        'account' => 'Account',
-        'country' => 'Country',
-        'city' => 'City',
-        'division' => 'Division',
-        'name' => 'Name',
-        'currency' => 'Currency',
-        'description' => 'Description',
-        'amount' => 'Amount',
-        'amountMin' => 'Amount min',
-        'amountMax' => 'Amount max',
-        'receiver' => 'Receiver',
-        'executionDate' => 'Execution Date',
-        'executionDateMin' => 'Execution Date range start',
-        'executionDateMax' => 'Execution Date range end',
-        'sentDate' => 'Sent Date',
-        'sentDateMin' => 'Sent Date range start',
-        'sentDateMax' => 'Sent Date range end',
-        'creationDate' => 'Creation Date',
-        'creationDateMin' => 'Creation Date range start',
-        'creationDateMax' => 'Creation Date range end',
-        'operationReference' => 'Operation Reference',
-        'status' => 'Status',
-        'statusTab' => 'Status tab'
-    );
-
-    const DELIM_DOUBLE_UNDERSCORE	= '__';
-
-    /**
-     * Apply an update routine (called with the session creation)
-     */
-    private static function applyUpdateRoutine()
-    {
-
-        try {
-            ///////////////////////////// @TODO DELETE AFTER NEXT RELEASE /////////////////////////////
-            // routine 2012-10-08 from JH : Add dsType to existing Authorization Lists
-            $config = ApplicationConfig::getInstance();
-            $aAuthLists = LDAPAuthorizationsList_Manager::getAuthorizationsLists(null, null, $config->o, null, null, null, array(LDAPAuthorizationsList_Manager::PREFIX_AUTH_ACCESS,LDAPAuthorizationsList_Manager::PREFIX_AUTH_USER,LDAPAuthorizationsList_Manager::PREFIX_AUTH_ROLE));
-            foreach ($aAuthLists as $authList) {
-                switch ($authList->getClassPrefix()) {
-                    case LDAPAuthorizationsList_Manager::PREFIX_AUTH_ACCESS:
-                        $authList->dsType = LDAPAuthorizationsList_Manager::TYPE_AUTH_ACCESS;
-                        break;
-                    case LDAPAuthorizationsList_Manager::PREFIX_AUTH_USER:
-                        $authList->dsType = LDAPAuthorizationsList_Manager::TYPE_AUTH_PERMISSION_USER;
-                        break;
-                    case LDAPAuthorizationsList_Manager::PREFIX_AUTH_ROLE:
-                        $authList->dsType = LDAPAuthorizationsList_Manager::TYPE_AUTH_PERMISSION_ROLE;
-                        break;
-                    default:
-                        break;
+    function seemsUTF8($str) {
+        if (is_array($str)) { // This should be removed and replaced by iterative check, but works
+            return true;
+        }
+        $length = strlen($str);
+        for ($i=0; $i < $length; $i++) {
+            $c = ord($str[$i]);
+            if ($c < 0x80) $n = 0; # 0bbbbbbb
+            elseif (($c & 0xE0) == 0xC0) $n=1; # 110bbbbb
+            elseif (($c & 0xF0) == 0xE0) $n=2; # 1110bbbb
+            elseif (($c & 0xF8) == 0xF0) $n=3; # 11110bbb
+            elseif (($c & 0xFC) == 0xF8) $n=4; # 111110bb
+            elseif (($c & 0xFE) == 0xFC) $n=5; # 1111110b
+            else return false; # Does not match any model
+            for ($j=0; $j<$n; $j++) { # n bytes matching 10bbbbbb follow ?
+                if ((++$i == $length) || ((ord($str[$i]) & 0xC0) != 0x80)) {
+                    return false;
                 }
-                $authList->update();
             }
-            ////////////////////////////////////////////////////////////////////////////////////////
-        } catch (Exception $exc) {
-            Utils::abort(_('Please contact your administrator.'));
         }
+        return true;
+    }
+
+    // Alternative to utf8_encode()
+    function removeNonUTF8Characters ($string) {
+        $string = iconv('UTF-8', 'UTF-8//IGNORE', $string);
+        return ($string);
     }
 
     /**
-     * Transform decimal number into hexadecimal
-     *
-     * @author Patrick Monnerat <pm@datasphere.ch>
-     *
-     * @param integer $number Integer to be converted to hexadecimal
-     *
-     * @return string    Hexadecimal number
+     * Translates a camel case string into a string with underscores (e.g. firstName -&gt; first_name)
+     * @param    string   $str    String in camel case format
+     * @return    string            $str Translated into underscore format
      */
-    public static function lrgDec2Hex($number) {
-        $hex = array();
-
-        while($number > 0) {
-            array_push($hex, strtoupper(dechex(bcmod($number, '16'))));
-            $number = bcdiv($number, '16', 0);
-        }
-        krsort($hex);
-        return implode($hex);
+    public static function fromCamelCase($str) {
+        $str[0] = strtolower($str[0]);
+        $func = create_function('$c', 'return "_" . strtolower($c[1]);');
+        return preg_replace_callback('/([A-Z])/', $func, $str);
     }
 
     /**
-     * Finds out which browser is being used
-     *
-     * @author Ruudrp <ruudrp@live.nl>
-     *
-     * @return array    browser information
+     * Translates a string with underscores into camel case (e.g. first_name -&gt; firstName)
+     * @param    string   $str                     String in underscore format
+     * @param    bool     $capitalise_first_char   If true, capitalise the first char in $str
+     * @return   string                              $str translated into camel caps
      */
-    public static function getBrowser() {
-        $u_agent = !empty($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : '';
-        $bname = 'Unknown';
-        $platform = 'Unknown';
-        $version= "";
-        $compatibilityViewFlag = false;
-
-        //First get the platform?
-        if (preg_match('/linux/i', $u_agent)) {
-            $platform = 'linux';
-        } elseif (preg_match('/macintosh|mac os x/i', $u_agent)) {
-            $platform = 'mac';
-        } elseif (preg_match('/windows|win32/i', $u_agent)) {
-            $platform = 'windows';
+    public static function toCamelCase($str, $capitalise_first_char = false) {
+        if($capitalise_first_char) {
+            $str[0] = strtoupper($str[0]);
         }
+        $func = create_function('$c', 'return strtoupper($c[1]);');
+        return preg_replace_callback('/_([a-z])/', $func, $str);
+    }
 
-        $ub = '';
-        // Next get the name of the useragent yes seperately and for good reason
-        if(preg_match('/MSIE/i',$u_agent) && !preg_match('/Opera/i',$u_agent)) {
-            $bname = 'Internet Explorer';
-            $ub = "MSIE";
-            if(preg_match('/Trident/i',$u_agent)){
-                $compatibilityViewFlag = true;      
-            }
-        } elseif(preg_match('/Firefox/i',$u_agent)) {
-            $bname = 'Mozilla Firefox';
-            $ub = "Firefox";
-        } elseif(preg_match('/Chrome/i',$u_agent)) {
-            $bname = 'Google Chrome';
-            $ub = "Chrome";
-        } elseif(preg_match('/Safari/i',$u_agent)) {
-            $bname = 'Apple Safari';
-            $ub = "Safari";
-        } elseif(preg_match('/Opera/i',$u_agent)) {
-            $bname = 'Opera';
-            $ub = "Opera";
-        } elseif(preg_match('/Netscape/i',$u_agent)) {
-            $bname = 'Netscape';
-            $ub = "Netscape";
-        }
+    /**
+     * Returns a random id after taking into account the priority of each element.
+     * $arrayWithPriority format example:
+     *          array(array(1 => 5.4),
+     *                array(2 => 10.2),
+     *                array(3 => 4.21),
+     *                array(4 => 17.33),
+     *                array(5 => 7.99),
+     *               );
+     *
+     * @param   array   $arrayWithPriority
+     * @param   int     $maximumValue
+     * @return  int
+     */
+    public static function getArrayWithPriority($arrayWithPriority, $maximumPriority = 10) {
+        $cache = Caching::getInstance();
+        $cacheID = 'Utils_getArrayWithPriority_'.md5(serialize($arrayWithPriority)).'_'.$maximumPriority;
 
-        // finally get the correct version number
-        $known = array('Version', $ub, 'other');
-        $pattern = '#(?<browser>' . join('|', $known) .
-        ')[/ ]+(?<version>[0-9.|a-zA-Z.]*)#';
-        if (!preg_match_all($pattern, $u_agent, $matches)) {
-            // we have no matching number just continue
-        }
+        if ($cachedData = $cache->get($cacheID)) {
+            return $cachedData;
+        } else {
+            if ($arrayWithPriority) {
+                $minimum = PHP_INT_MAX;
+                $maximum = 0;
 
-        // see how many we have
-        $i = count($matches['browser']);
-        if ($i != 1) {
-            //we will have two since we are not using 'other' argument yet
-            //see if version is before or after the name
-            if (strripos($u_agent,"Version") < strripos($u_agent,$ub)){
-                $version= $matches['version'][0];
+                foreach($arrayWithPriority as $row) {
+                    if ($minimum > $row) {
+                        $minimum = $row;
+                    }
+                    if ($maximum < $row) {
+                        $maximum = $row;
+                    }
+                }
+                $augmentedArray = array();
+
+                foreach($arrayWithPriority as $key => $row) {
+                    // It works, believe me, don't mess with it!!!
+                    $normalizedPriority = 1;
+                    if (($maximum-$minimum) > 0){
+                        $normalizedPriority = intval((($row-$minimum)/($maximum-$minimum)) * ($maximumPriority - 1)) + 1;
+                    } else {
+                        $normalizedPriority = $maximumPriority / 2;
+                    }
+
+                    for ($i = 0; $i < $normalizedPriority; $i++) {
+                        $augmentedArray[] = $key;
+                    }
+                }
+
+                $cache->save($cacheID, $augmentedArray, rand(55, 70)); // About 1 minute
+                return $augmentedArray;
             } else {
-                if (isset($matches['version'][1])){
-                    $version= $matches['version'][1];
+                $cache->save($cacheID, 0, rand(55, 70) * 10); // About 10 minutes
+                return 0;
+            }
+        }
+    }
+
+    public static function getRandomArrayIDWithPriority($arrayWithPriority, $maximumPriority = 10) {
+        $augmentedArray = self::getArrayWithPriority($arrayWithPriority, $maximumPriority);
+
+        return $augmentedArray[array_rand($augmentedArray)];
+    }
+
+    // Parameters can be arrays of strings or strings!!!
+    public static function aproximateCompare($firstArray, $secondArray) {
+        $cache = Caching::getInstance();
+        $cacheID = 'Utils_aproximateCompare_'.md5(serialize($firstArray).serialize($secondArray));
+
+        if ($cachedData = $cache->get($cacheID)) {
+            return $cachedData;
+        } else {
+            if (is_string($firstArray)) {
+                $firstArray = array($firstArray);
+            } elseif (is_array($firstArray)) {
+            } else {
+                return 0;
+            }
+
+            if (is_string($secondArray)) {
+                $secondArray = array($secondArray);
+            } elseif (is_array($secondArray)) {
+            } else {
+                return 0;
+            }
+
+            $equivalence = 0;
+            foreach ($firstArray as $first) {
+                foreach ($secondArray as $second) {
+                    // Test real equivalence all lowercase
+                    if (strtolower($first) == strtolower($second)) {
+                        $equivalence = 100;
+                        break(2);
+                    } else {
+                        $length = strlen($first);
+                        if (strlen($second) < $length) {
+                            $length = strlen($second);
+                        }
+
+                        $firstSub = substr($first,0,$length);
+                        $secondSub = substr($second,0,$length);
+
+                        similar_text(strtolower($firstSub), strtolower($secondSub), $similarity);
+
+                        if ($similarity == 100) {
+                            $equivalence = 100;
+                            break(2);
+                        } elseif ($similarity > $equivalence) {
+                            $equivalence = $similarity;
+                        }
+                    }
                 }
             }
+
+            $cache->save($cacheID, $equivalence, rand(55, 70) * 15); // About 15 minutes
+            return $equivalence;
+        }
+    }
+
+    // Direct alternative for file_get_contents();
+    public static function getUrlContent($url, $timeout = 2, $force = false, $getCurlInfo = false) {
+        // Avoid sending postbacks when in dev
+        if (gethostname() == 'YDSERVER-LX' && !$force) {
+            $log = DebugLog::getInstance();
+            $log->debugNonScalarObject($url);
+
+            #echo "<b>Postback:</b> $url<br>";
+
+            return $url;
         } else {
-            $version= $matches['version'][0];
+            $ch = curl_init();
+
+            curl_setopt($ch, CURLOPT_URL, $url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $timeout);
+            curl_setopt($ch, CURLOPT_TIMEOUT, $timeout * 2);
+
+            $data = curl_exec($ch);
+
+            if($getCurlInfo === false){
+                curl_close($ch);
+                return $data;
+            }else{
+                $curlInfo = curl_getinfo($ch);
+                curl_close($ch);
+                return array_merge(array("data"=>$data), array("curlInfo"=>$curlInfo));
+            }
+        }
+    }
+
+    /**
+     * From: http://www.phpied.com/simultaneuos-http-requests-in-php-with-curl/
+       Example:
+            $data = array(
+             'http://search.yahooapis.com/VideoSearchService/V1/videoSearch?appid=YahooDemo&query=Pearl+Jam&output=json',
+             'http://search.yahooapis.com/ImageSearchService/V1/imageSearch?appid=YahooDemo&query=Pearl+Jam&output=json',
+             'http://search.yahooapis.com/AudioSearchService/V1/artistSearch?appid=YahooDemo&artist=Pearl+Jam&output=json'
+            );
+            $r = multiRequest($data);
+     *
+     * @param type $data
+     * @param type $options
+     * @return type
+     */
+    function getMultipleUrlContents($data, $options = array()) {
+        // array of curl handles
+        $curly = array();
+        // data to be returned
+        $result = array();
+
+        // multi handle
+        $mh = curl_multi_init();
+
+        // loop through $data and create curl handles
+        // then add them to the multi-handle
+        foreach ($data as $id => $d) {
+
+          $curly[$id] = curl_init();
+
+          $url = (is_array($d) && !empty($d['url'])) ? $d['url'] : $d;
+          curl_setopt($curly[$id], CURLOPT_URL,            $url);
+          curl_setopt($curly[$id], CURLOPT_HEADER,         0);
+          curl_setopt($curly[$id], CURLOPT_RETURNTRANSFER, 1);
+
+          // post?
+          if (is_array($d)) {
+            if (!empty($d['post'])) {
+              curl_setopt($curly[$id], CURLOPT_POST,       1);
+              curl_setopt($curly[$id], CURLOPT_POSTFIELDS, $d['post']);
+            }
+          }
+
+          // extra options?
+          if (!empty($options)) {
+            curl_setopt_array($curly[$id], $options);
+          }
+
+          curl_multi_add_handle($mh, $curly[$id]);
         }
 
-        // check if we have a number
-        if ($version==null || $version=="") {
-            $version="?";
-            $version_short = "?";
-        } else {
-            $elements = explode('.', $version);
-            $version_short = $elements[0];
+        // execute the handles
+        $running = null;
+        do {
+          curl_multi_exec($mh, $running);
+        } while($running > 0);
+
+
+        // get content and remove handles
+        foreach($curly as $id => $c) {
+          $result[$id] = curl_multi_getcontent($c);
+          curl_multi_remove_handle($mh, $c);
         }
 
-        return array(
-            'compatibilityView' => $compatibilityViewFlag,
-            'userAgent'     => $u_agent,
-            'name'          => $bname,
-            'version'       => $version,
-            'version_short' => $version_short,
-            'platform'      => $platform,
-            'pattern'       => $pattern
-        );
+        // all done
+        curl_multi_close($mh);
+
+        return $result;
+    }
+
+    // Splits string at the nth occurrence of a character
+    function splitStringAtNth($string, $needle, $nth){
+        $max = strlen($string);
+        $n = 0;
+        for ($i = 0; $i < $max; $i++) {
+            if ($string[$i] == $needle) {
+                $n++;
+                if($n >= $nth) {
+                    break;
+                }
+            }
+        }
+        /*$arr[] = substr($string, 0, $i);
+        $arr[] = substr($string, $i+1, $max);
+
+        return $arr;*/
+
+        $str = substr($string, 0, $i);
+
+        return $str;
+    }
+
+    public static function compileParameterStringFromArray($parameters) {
+        if (is_array($parameters)) {
+            $parametersStep = array();
+            foreach ($parameters as $parameterKey => $parameterValue) {
+                if ($parameterKey == 'yd') {
+                    $parametersStep[] = $parameterKey.'='.$parameterValue;
+                } else {
+                    $parametersStep[] = $parameterKey.'='.urlencode($parameterValue);
+                }
+            }
+
+            $parametersString = join('&', $parametersStep);
+
+            return ($parametersString);
+        } else {
+            return '';
+        }
+    }
+
+    public static function compileUrlWithParameters($url, $parameters) {
+        $parametersString = '';
+        if (is_array($parameters)) {
+            $parametersString = self::compileParameterStringFromArray($parameters);
+        } else {
+            $parametersString = $parameters;
+        }
+
+        // If URL already as parameters
+        if (strpos($url, '?')) {
+            if ((substr($url, -1) == '?') || (substr($url, -1) == '&')) {
+                $url = $url.$parametersString;
+            } else {
+                $url = $url.'&'.$parametersString;
+            }
+        // If URL does not have parameters
+        } else {
+            $url = $url.'?'.$parametersString;
+        }
+
+        return ($url);
+    }
+
+    /**
+     * Call url with separated parameters
+     *
+     * @param   string      $url            URL to call
+     * @param   array       $parameters     Parameters to add to URL
+     * @param   integer     $timeout        Timeout in seconds
+     *
+     * @return  string      Url Content
+     *
+     */
+    public static function getUrlWithParameters($url, $parameters, $timeout = 15) {
+        $url = self::compileUrlWithParameters ($url, $parameters);
+
+        return self::getUrlContent($url, $timeout);
+    }
+
+    /**
+     * Check if variable exists before using it
+     *
+     * @param   array   $var    Variable to check if exists
+     * @param   array   $key    Variable key to check if exists
+     * @param   array   $safe   What to return when empty
+     *
+     * @return  mixed   Variable value or '' or $safe
+     *
+     */
+    public static function safeGetVariable($var, $key, $safe = '') {
+        if (!empty($var[$key])) {
+            $safe = $var[$key];
+        }
+        return $safe;
     }
 
     /**
      * Truncate text
      *
-     * @author Chirp Internet: www.chirp.com.au
+     * @author  Chirp Internet: www.chirp.com.au
      *
-     * @param string $string Text to be truncated
-     * @param integer $limit  Amount of characters we want to have
-     * @param string $break  Where to break the string
-     * @param string $pad    What to insert at the end of the string
+     * @param   string      $string     Text to be truncated
+     * @param   integer     $limit      Amount of characters we want to have
+     * @param   string      $break      Where to break the string
+     * @param   string      $pad        What to insert at the end of the string
      *
-     * @return string    truncated text
+     * @return  string      truncated text
      *
      */
     public static function truncate($string, $limit, $break=" ", $pad="...") {
@@ -219,7 +412,7 @@ class Utils {
     /**
      * Safer substitute to die(), so that errors are not shown in production
      *
-     * @author Patrick Monnerat <pm@datasphere.ch>
+     * @author Nuno Barreto <n.barreto@ydigitalmedia.com>
      *
      * @param string|bool $msg Message to show
      */
@@ -234,7 +427,7 @@ class Utils {
             }
 
             if (!ini_get("display_errors")) {
-                echo (_("An error occurred. Please report timestamp '").date('c')._("' to Datasphere support."));
+                echo (_("An error occurred. Please report timestamp '").gmdate('c')._("' to YDigital Media support."));
             }
 
             $level = error_reporting();
@@ -249,7 +442,7 @@ class Utils {
     /**
      * Sets locale based on what comes from $_GET, and returns real locale
      *
-     * @author Nuno Barreto <nb@datasphere.ch>
+     * @author Nuno Barreto <n.barreto@ydigitalmedia.com>
      *
      * @param string $locale Locale guessed from $_GET
      */
@@ -301,11 +494,11 @@ class Utils {
             $config                   = ApplicationConfig::getInstance();
              if ( isset($_SESSION['user']) && isset($_SESSION['organization']))
             {
-            	if ( ( $_SESSION['user'] != $config->u ) || ( $_SESSION['organization'] != $config->o ) )
-            	{
-            		session_destroy();
-                	Utils::abort("invalid session number");
-            	}
+                if ( ( $_SESSION['user'] != $config->u ) || ( $_SESSION['organization'] != $config->o ) )
+                {
+                    session_destroy();
+                    Utils::abort("invalid session number");
+                }
             }
 
             $_SESSION['user']         = $config->u;
@@ -350,9 +543,7 @@ class Utils {
     }
 
      public static function checkSession() {
-
         if (session_id()) {
-
             $file     = session_save_path() . '/sess_' . session_id();
             if(file_exists($file)){
             $config   = ApplicationConfig::getInstance();
@@ -373,142 +564,9 @@ class Utils {
         if (!session_id()) {
             session_start();
         }
-        
+
         session_regenerate_id(true);
         $_SESSION['HTTP_USER_AGENT'] = md5($salt.$_SERVER['HTTP_USER_AGENT'].$_SERVER['REMOTE_ADDR']);
-    }
-    
-    public static function userLogin($organization, $user, $loginType = '')
-    {
-        Utils::sessionRegenerate();
-        
-        $loginDate              = date('Y-m-d H:i:s');
-        
-        // closing opened user sessions
-        $aOldSessions           = Session_Manager::getOpenedUserSessions($organization, $user);
-        foreach ($aOldSessions as $oldSession) {
-            $oldSession->endSession($loginDate, Session_Manager::LOGOUT_TYPE_LOGGED_ANOTHER_LOCATION);
-        }
-        
-        // creating new session
-        $config                 = ApplicationConfig::getInstance();
-        $session                = Session_Manager::createUserSession(session_id(), $organization, $user, $loginDate, $loginType, $config->ipReal, $config->ipProxy);
-        
-        $_SESSION['login'] = true;
-    }
-    
-    public static function userLogout($organization, $user, $logoutType = '')
-    {
-        if (!session_id()) {
-            session_start();
-        }
-        
-        $logoutDate             = date('Y-m-d H:i:s');
-        $session                = Session_Manager::getUserSessionBySessionKey($organization, $user, session_id());
-        
-        if ($session) {
-            $session->endSession($logoutDate, $logoutType);
-        }
-//        session_regenerate_id();
-//        session_destroy();
-//        session_unset();
-    }
-    
-    /**
-     * @deprecated
-     */
-    function strToHex($string) {
-        $hex='';
-        for ($i=0; $i < strlen($string); $i++) {
-            $hex .= dechex(ord($string[$i]));
-        }
-        return $hex;
-    }
-
-    /**
-     * @deprecated
-     */
-    function hexToStr($hex) {
-        $string='';
-        for ($i=0; $i < strlen($hex)-1; $i+=2) {
-            $string .= chr(hexdec($hex[$i].$hex[$i+1]));
-        }
-        return $string;
-    }
-
-    /**
-     * @deprecated
-     */
-    function bc_frombase($s, $base, $scale = 0) {
-        //  Convert a number in a given base into an arbitrary precision
-        //      number.
-
-        $s = strtolower(trim($s));
-        $negative = substr("$s/", 0, 1) == '-';
-
-        if ($negative)
-            $s = substr($s, 1);
-
-        $digits = array_flip(str_split('0123456789abcdefghijklmnopqrstuvwxyz'));
-        $point = NULL;
-        $acc = '0';
-
-        foreach (str_split($s) as $c)
-            if ($point !== NULL && $c == '.')
-                $point = '1';
-            else if (!isset($digits[$c]) || $digits[$c] >= $base)
-                return FALSE;
-            else {
-                $acc = bcadd(bcmul($acc, $base, 0), $digits[$c], 0);
-
-                if (!is_null($point))
-                    $point = bcmul($point, $base, 0);
-                }
-
-        if ($point !== NULL)
-            $acc = bcdiv($acc, $point, $scale);
-
-        return $negative? "-$acc": $acc;
-    }
-
-    /**
-     * @deprecated
-     */
-    function bc_tobase($s, $base) {
-        //  Convert an arbitrary precision number into a number in the
-        //      specified base.
-
-        $s = trim($s);
-        $negative = substr("$s/", 0, 1) == '-';
-
-        if ($negative)
-            $s = substr($s, 1);
-
-        $digits = str_split('0123456789abcdefghijklmnopqrstuvwxyz');
-
-        $point = -1;
-        $parts = explode('.', $s, 2);
-
-        if (isset($parts[1])) {
-            $s = $parts[0] . $parts[1];
-            $point = strlen($parts[1]);
-
-            if (!$point)
-                $point = -1;
-            }
-
-        $result = '';
-
-        do {
-            $d = bcmod($s, $base);
-            $s = bcdiv(bcsub($s, $d, 0), $base, 0);
-            $result = $digits[$d + 0] . $result;
-
-            if (!--$point)
-                $result = ".$result";
-        } while ($s != '0' || $point > 0);
-
-        return $negative? "-$result": $result;
     }
 
     /**
@@ -521,45 +579,11 @@ class Utils {
         return preg_replace('/[^a-z0-9]+/i', $replacementChar, $string);
     }
 
-      /**
-     * Format date with a given string "YYYYMMDD" and add separator
-     *
-     * @author Yann JAMAR <yj@datasphere.ch>
-     *
-     * @param string $locale Locale guessed from $_GET
-     * @return String in the format date
-     */
-    public static function getDateFromString($stringDate,$separator){
-
-         $year  = substr($stringDate, 0, 4);
-         $month = substr($stringDate, 4, 2);
-         $day   = substr($stringDate, 6);
-         $date  = $year.$separator.$month.$separator.$day;
-         return $date;
-    }
-     /**
-     * Format time with a given string "hhmmss" and add separator
-     *
-     * @author Yann JAMAR <yj@datasphere.ch>
-     *
-     * @param string $locale Locale guessed from $_GET
-     * @return String in the format date
-     */
-    public static function getTimeFromString($stringTime,$separator){
-        $stringTime = str_pad($stringTime, 6, '0', STR_PAD_LEFT);
-
-        $hours   = substr($stringTime, 0, 2);
-        $minutes = substr($stringTime, 2, 2);
-        $seconds = substr($stringTime, 4, 2);
-        $time    = $hours.$separator.$minutes.$separator.$seconds;
-        return $time;
-    }
-
     /**
         * Return an array of values from an undefined number of values (single or array)
         * @access public
         * @static
-        * @author Julien Hoarau <jh@datasphere.ch>
+        * @author Nuno Barreto <n.barreto@ydigitalmedia.com>
         * @param  Mixed     $value
         * @param  boolean   $keepNullValues     Define if we keep null values
         * @return Array
@@ -571,10 +595,10 @@ class Utils {
 
         // single value
         if (is_string($value) OR is_numeric($value) OR is_bool($value) OR is_object($value)) {
-            $aValues	= array($value);
+            $aValues    = array($value);
         // multiple values
         } else if (is_array($value) AND (count($value) > 0)) {
-            $aValues	= $value;
+            $aValues    = $value;
         }
 
         if (!$keepNullValues) {
@@ -644,43 +668,6 @@ class Utils {
         return call_user_func_array('sprintf', array_merge((array)$format, $values));
     }
 
-    /**
-     * Format as a DB Amount
-     * e.g : 3'000.25  =>  000000000000300025
-     * @param string $amount
-     * @return string
-     */
-    public static function formatAsDBAmount($amount) {
-        $nbDigit = 0;
-
-        $amount         = str_replace("'", '', $amount);
-        $amount         = str_replace(',', '.', $amount);
-
-        $testAmount = explode('.', $amount);
-        if(isset($testAmount[1])){
-            $nbDigit = strlen($testAmount[1]);
-        }
-
-        $leftDigits     = strstr($amount, '.', true);
-        $rightDigits    = str_replace('.', '', strstr($amount, '.'));
-        $rightDigits    = str_pad($rightDigits, $nbDigit , '0');
-
-        if (!$leftDigits) {
-            $amount     = str_replace('.', '', $amount);
-            $amount     = $amount.$rightDigits;
-        } else {
-            $amount     = $leftDigits.$rightDigits;
-        }
-
-        if (substr($amount,0,1) == '-') {
-            $amount = '-'.str_pad(substr($amount,1), 17, '0', STR_PAD_LEFT);
-        } else {
-            $amount = str_pad($amount, 18, '0', STR_PAD_LEFT);
-        }
-
-        return $amount;
-    }
-
     public static function formatNumberDec($number, $rangeMin = -999999999999, $rangeMax = 999999999999)
     {
         $number         = str_replace("'", '', $number);
@@ -710,62 +697,11 @@ class Utils {
 
         return $sAmount;
     }
-
-    public static function formatDate($sDate, $format = 'Y-m-d H:i:s')
-    {
-        $sdateReturn    = '';
-        
-        if ($sDate) {
-            $length = strlen($sDate);
-
-            // yyyy-mm-dd.hh.ii.ss.uuuuuu
-            if ($length == 26) {
-                $sDate  = substr($sDate, 0, 19);
-            }
-
-            // yyyy-mm-dd.hh.ii.ss
-            $sDate      = str_replace(array('-', '/', '.', ':', ' '), '', $sDate);
-
-            // yyyymmddhhiiss
-            $length     = strlen($sDate);
-            switch ($length) {
-                // date time
-                case 16 :
-                case 14 :
-                case 13 : {
-                    $date   = self::getDateFromString(substr($sDate, 0, 8), '-');
-                    $time   = self::getTimeFromString(substr($sDate, 8), ':');
-                    $sDate  = $date.' '.$time;
-                    break;
-                }
-                // date
-                case 8 : {
-                    $sDate   = self::getDateFromString($sDate, '-');
-                    break;
-                }
-                // time
-                case 6 : {
-                    $sDate   = self::getTimeFromString($sDate, ':');
-                    break;
-                }
-                default : {
-                    break;
-                }
-            }
-
-            $timestamp  = strtotime($sDate);
-
-            $sdateReturn = date($format, $timestamp);
-        }
-
-        return $sdateReturn;
-    }
-
     /**
         * Add a log message to the logFile
         * @access public
         * @static
-        * @author Julien Hoarau <jh@datasphere.ch>
+        * @author Nuno Barreto <n.barreto@ydigitalmedia.com>
         * @param Mixed $input   Content to display
         * @param String $label   Label of the content to display (optionnal)
         * @return void
@@ -773,7 +709,7 @@ class Utils {
     public static function log($input, $label = null)
     {
         // init
-        $log	= DebugLog::getInstance();
+        $log    = DebugLog::getInstance();
 
         if ($log) {
             if (!is_scalar($input)) {
@@ -791,7 +727,7 @@ class Utils {
     public static function logTimer($label = '', $timerReference = null)
     {
         // init
-        $log	= DebugLog::getInstance();
+        $log    = DebugLog::getInstance();
         if ($log) {
             $log->logTimer($label, $timerReference);
         }
@@ -867,10 +803,10 @@ class Utils {
             return false;
         }
     }
-    
-    
-    
-    
+
+
+
+
 
     /**
      * Delete dir recursively (Be careful with that ! )
@@ -892,12 +828,13 @@ class Utils {
            return false;
        }
     }
+
     /**
      *
      * @param type $line
      * @param type $charMajWidth
      * @param type $charMinWidth
-     * @return type 
+     * @return type
      */
     public static function getLineWidth( $line = '' , $charMajWidth = 10 , $charMinWidth = 8){
         $majPattern = '/[A-Z_ 23456789mw]+/';
@@ -907,15 +844,398 @@ class Utils {
         $nbMaj = 0;
         $nbSmall = 0;
         foreach($matchesMaj[0] as $value){
-            $nbMaj += strlen($value);    
+            $nbMaj += strlen($value);
         }
         foreach($matchesSmall[0] as $value){
-            $nbSmall += strlen($value);    
-        }       
-        
+            $nbSmall += strlen($value);
+        }
+
         $nbMin = strlen($line) - $nbMaj;
         $lenght = $nbMaj*$charMajWidth + $nbMin*$charMinWidth - $nbSmall*8;
         return $lenght;
+    }
+
+
+    # Utils Array
+
+
+    /**
+     * Sort an std array depending of a property
+     * @access public
+     * @static
+     * @author Nuno Barreto <n.barreto@ydigitalmedia.com>
+     * @param Array      $array
+     * @param String     $property
+     * @param Boolean    $sort       SORT_ASC or SORT_DESC
+     * @return Array
+     */
+    public static function array_std_sort($array, $property, $sortValue = SORT_ASC)
+    {
+        // init
+        global $key;
+        global $sort;
+
+        $key    = $property;
+        $sort   = $sortValue;
+
+        // sorting array
+        if (is_array($array)) {
+            usort($array, array('UtilsArray', 'compareStdArray'));
+        }
+
+        return $array;
+    }
+
+    /**
+     * Generate an array using one or more attributes of a parent array
+     * @access public
+     * @static
+     * @param Array $aData          Parent array
+     * @param Array $attributeName  Name of the attribute we want to fetch
+     * @param Array $_              Others attributes
+     * @return Array
+     */
+    public static function array_child($aData, $attributeName, $_ = null)
+    {
+        // Init
+        $aReturn = array();
+        if (is_array($aData) OR ($aData instanceof Traversable)) {
+            // getting attributes
+            $aArgs  = func_get_args();
+            $aArgs  = array_slice($aArgs, 1);
+
+            $isMultiAtt = false;
+            if (count($aArgs) > 1) {
+                $isMultiAtt = true;
+            }
+
+            if ($attributeName) {
+
+                foreach ($aData as $element) {
+
+                    // Init
+                    $value = null;
+
+                    if ($isMultiAtt) {
+                        $isArray = false;
+                        if (is_array($element)) {
+                            $isArray = true;
+                            $value = array();
+                        } else {
+                            $value = new stdClass();
+                        }
+
+                        foreach ($aArgs as $attribut) {
+                            if ($isArray) {
+                                if (isset($element[$attribut])) {
+                                    $value[$attribut]   = $element[$attribut];
+                                } else {
+                                    $value[$attribut]   = null;
+                                }
+                            } else {
+                                if (isset($element->$attribut)) {
+                                    $value->$attribut   = $element->$attribut;
+                                } else {
+                                    $value->$attribut   = null;
+                                }
+                            }
+                        }
+                    } else {
+                        if (is_array($element) AND isset($element[$attributeName])) {
+                            $value = $element[$attributeName];
+                        } else if (isset($element->$attributeName)) {
+                            $value = $element->$attributeName;
+                        }
+                    }
+
+                    $aReturn[] = $value;
+                }
+            }
+        }
+
+        return $aReturn;
+    }
+
+    public static function array_map_recursive($function, $array) {
+        $returnArray = array();
+        foreach ($array as $k => $v) {
+            $returnArray[$k] = (is_array($v))? self::array_map_recursive($function, $v) : $function($v); // or call_user_func($fn, $v)
+        }
+
+        return $returnArray;
+    }
+
+    /**
+    * Flattens an array, or returns FALSE on fail.
+    */
+    public static function array_flatten($array, $onlyFirstValue = false) {
+        if (!is_array($array)) {
+            return FALSE;
+        }
+        $result = array();
+        foreach ($array as $key => $value) {
+            if (is_array($value)) {
+                if (!$onlyFirstValue) {
+                    $result = array_merge($result, self::array_flatten($value));
+                } else {
+                    $result[$key] = reset($value);
+                }
+            } else {
+                $result[$key] = $value;
+            }
+        }
+        return $result;
+    }
+
+    public static function array_sort_recursive(&$a)
+    {
+        sort($a);
+        $c = count($a);
+        for($i = 0; $i < $c; $i++)
+            if (is_array($a[$i]))
+                self::array_sort_recursive($a[$i]);
+    }
+
+    //////////////// CALLBACKS /////////////////
+
+    public static function filter_numeric($var)
+    {
+        return is_numeric($var);
+    }
+
+    /**
+     * Callback function used with usort().
+     * @access private
+     * @static
+     * @author Nuno Barreto <n.barreto@ydigitalmedia.com>
+     * @param Mixed $a
+     * @param Mixed $b
+     * @return Integer -1, 0 or 1.
+     */
+    private static function compareStdArray($a, $b)
+    {
+        // init
+        $return         = 0;
+        if (is_array($a)) {
+            $aProperty      = $a[$GLOBALS['key']];
+        } else {
+            $aProperty      = $a->$GLOBALS['key'];
+        }
+        if (is_array($b)) {
+            $bProperty      = $b[$GLOBALS['key']];
+        } else {
+            $bProperty      = $b->$GLOBALS['key'];
+        }
+
+        if ((isset ($aProperty)) AND (isset ($bProperty))) {
+            switch(true) {
+                case ((!is_string($aProperty)) AND ((!is_string($bProperty)))) : {
+                    if ($aProperty != $bProperty) {
+                        if ($GLOBALS['sort'] == SORT_ASC) {
+                            if ($aProperty > $bProperty) {
+                                $return     = 1;
+                            } elseif ($aProperty < $bProperty) {
+                                $return     = -1;
+                            }
+                        } elseif ($GLOBALS['sort'] == SORT_DESC) {
+                            if ($aProperty > $bProperty) {
+                                $return     = -1;
+                            } elseif ($aProperty < $bProperty) {
+                                $return     = 1;
+                            }
+                        }
+                    } else {
+                        $return = 0;
+                    }
+                    break;
+                }
+                default : {
+                    $aProperty  = strval($aProperty);
+                    $bProperty  = strval($bProperty);
+
+                    if (strcasecmp($aProperty, $bProperty) != 0) {
+                        if ($GLOBALS['sort'] == SORT_ASC) {
+                            if (strcasecmp($aProperty, $bProperty) > 0) {
+                                $return     = 1;
+                            } elseif (strcasecmp($aProperty, $bProperty) < 0) {
+                                $return     = -1;
+                            }
+                        } elseif ($GLOBALS['sort'] == SORT_DESC) {
+                            if (strcasecmp($aProperty, $bProperty) > 0) {
+                                $return     = -1;
+                            } elseif (strcasecmp($aProperty, $bProperty) < 0) {
+                                $return     = 1;
+                            }
+                        }
+                    } else {
+                        $return = 0;
+                    }
+                    break;
+                }
+            }
+        }
+        return $return;
+    }
+
+
+    # Utils JSON
+
+    public static function jsEscape($str) {
+        return addcslashes($str,"\\\'\"&\n\r<>");
+    }
+
+    public static function generateLink($href = '', $imgUrl = '', $imgTitle = '', $linkText = '', $target = '')
+    {
+        $link = '';
+        $link = "<a ";
+        if ($target) {
+            $link .= " target=\"".$target."\"";
+        }
+        $link .= " href=\"".$href."\">";
+        if ($imgUrl) {
+            $imgTitle   = htmlspecialchars($imgTitle);
+            $link       .= "<img src=\"".$imgUrl."\" title=\"".$imgTitle."\"  style=\"width:16px;height:16px;\" />";
+        }
+        if ($linkText) {
+            $link       .= $linkText;
+        }
+        $link .= "</a>";
+
+        return $link;
+    }
+
+    public static function generateMainDialogLink($dialogTitle = '', $href = '', $imgUrl = '', $imgTitle = '', $linkText = '')
+    {
+        $link = '';
+        $link = "<a href=\"#\" onClick=\"dijit.byId('MainDialog').attr('title', '".self::jsEscape($dialogTitle)."');dijit.byId('MainDialog').attr('href','".$href."');dijit.byId('MainDialog').show();dijit.byId('MainDialog').closeButtonNode.title = '"._('Cancel')."';\">";
+        if ($imgUrl) {
+            $imgTitle   = htmlspecialchars($imgTitle);
+            $link       .= "<img src=\"".$imgUrl."\" title=\"".$imgTitle."\" alt=\"".$imgTitle."\" style=\"width:16px;height:16px;\"  />";
+        }
+        if ($linkText) {
+            $link       .= $linkText;
+        }
+        $link .= "</a>";
+
+        return $link;
+    }
+
+
+
+
+    public static function stringUrlToArray($string){
+        $infoArrayCampaignAux = explode('&', $string);
+        $infoArrayCampaign = array();
+        foreach($infoArrayCampaignAux as $value){
+            if(!empty($value)){
+                list($key, $value) = explode('=', $value);
+                $infoArrayCampaign[$key] = urldecode($value);
+            }
+
+        }
+
+        return $infoArrayCampaign;
+    }
+    public static function compare2DateTimes($startDate, $endDate){
+        $tsStartDate = strtotime($startDate);
+        $tsEndDate = strtotime($endDate);
+
+        if($tsStartDate > $tsEndDate){
+            return array('status'=>'ko', 'message'=> 'START DATE: '.$startDate.' bigger then END DATA:'.$endDate);
+        }elseif($tsStartDate == $tsEndDate){
+            return array('status'=>'ko', 'message'=> 'START DATE: '.$startDate.' equals END DATE:'.$endDate);
+        }else{
+            return 'ok';
+        }
+    }
+
+    public static function getInfoFile($file){
+        //GET MIME TYPE
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+        $mimeType = $finfo->file($file);
+
+
+        //GET INFO FILE
+        list($width, $height, $type, $attr) = getimagesize($file);
+
+        return array('width' => $width, 'height' => $height, 'type' => $type, 'attr' =>$attr, 'mimeType' => $mimeType);
+    }
+    public static function getInfoFileResource($file){
+        //GET MIME TYPE
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+        $mimeType = $finfo->buffer($file);
+
+        //GET INFO FILE
+        $image = imagecreatefromstring($file);
+        $width = imagesx($image);
+        $height = imagesy($image);
+
+        return array('width' => $width, 'height' => $height, 'mimeType' => $mimeType);
+    }
+
+
+    public static function decryptPathFile($file){
+        $firstFolder = substr($file, 0, 2);
+        $secondFolder = substr($file, 2, 2);
+
+        return $firstFolder.DIRECTORY_SEPARATOR.$secondFolder.DIRECTORY_SEPARATOR.$file;
+    }
+
+    public static function parsePutToVariables($raw_data){
+        // Fetch content and determine boundary
+        //$raw_data = file_get_contents('php://input');
+        $boundary = substr($raw_data, 0, strpos($raw_data, "\r\n"));
+        $data = array();
+
+        // Fetch each part
+        if(!empty($raw_data)){
+            $parts = array_slice(explode($boundary, $raw_data), 1);
+
+            foreach ($parts as $part) {
+                // If this is the last part, break
+                if ($part == "--\r\n") break;
+
+                // Separate content from headers
+                $part = ltrim($part, "\r\n");
+                list($raw_headers, $body) = explode("\r\n\r\n", $part, 2);
+
+                // Parse the headers list
+                $raw_headers = explode("\r\n", $raw_headers);
+                $headers = array();
+                foreach ($raw_headers as $header) {
+                    list($name, $value) = explode(':', $header);
+                    $headers[strtolower($name)] = ltrim($value, ' ');
+                }
+
+                // Parse the Content-Disposition to get the field name, etc.
+                if (isset($headers['content-disposition'])) {
+                    $filename = null;
+                    preg_match(
+                        '/^(.+); *name="([^"]+)"(; *filename="([^"]+)")?/',
+                        $headers['content-disposition'],
+                        $matches
+                    );
+                    list(, $type, $name) = $matches;
+                    isset($matches[4]) and $filename = $matches[4];
+
+                    // handle your fields here
+                    switch ($name) {
+                        // this is a file upload
+                        case 'userfile':
+                             file_put_contents($filename, $body);
+                             break;
+
+                        // default for all other files is to populate $data
+                        default:
+                             $data[$name] = substr($body, 0, strlen($body) - 2);
+                             break;
+                    }
+                }
+            }
+        }
+
+
+        return $data;
     }
 }
 ?>
