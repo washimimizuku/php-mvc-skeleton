@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wurfl-config>
+  <wurfl>
+    <main-file>wurfl.zip</main-file>
+  </wurfl>
+  <allow-reload>true</allow-reload>
+  <match-mode>performance</match-mode>
+  <capability-filter>
+    <capability>is_wireless_device</capability>
+    <capability>preferred_markup</capability>
+    <capability>xhtml_support_level</capability>
+    <capability>xhtmlmp_preferred_mime_type</capability>
+    <capability>device_os</capability>
+    <capability>device_os_version</capability>
+    <capability>is_tablet</capability>
+    <capability>mobile_browser_version</capability>
+    <capability>pointing_method</capability>
+    <capability>mobile_browser</capability>
+    <capability>resolution_width</capability>
+  </capability-filter>
+  <persistence>
+    <provider>file</provider>
+    <params>dir=persistence</params>
+  </persistence>
+  <cache>
+    <provider>file</provider>
+    <params>dir=cache</params>
+  </cache>
+</wurfl-config>
