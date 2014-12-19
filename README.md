@@ -11,3 +11,5 @@ a full-featured MVC platform would be too cumbersome to use.
 Models are in lib->classes
 Views are in templates (Smarty)
 Controllers are in www, and are directly accessible
+
+THIS IS YET AN INCOMPLETE PROJECT, IT LACKS A REAL EXAMPLE WITH VIEWS
